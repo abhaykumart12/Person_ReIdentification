@@ -317,7 +317,7 @@ print(model)
 
 # model to gpu
 model = model.cuda()
-
+optim_name = optim.SGD
 
 if not opt.PCB:
     ignored_params = list(map(id, model.classifier.parameters() ))
