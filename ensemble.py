@@ -83,7 +83,7 @@ for i in files:
     plt.close('all')
     #method 2
     #sort all the results and take top N
-    result=campus+bus+mall #+traffic+supermarket
+    result=campus[:N]+bus[:N]+mall[:N] #+traffic+supermarket
     result.sort(key=lambda x:x[1],reverse=True)
     temp=[]
     for j in range(N):
