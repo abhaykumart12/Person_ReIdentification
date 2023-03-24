@@ -51,6 +51,7 @@ for i in files:
     #method 1
     #take top N/k from all the datasets
     result=campus[:5]+bus[:5] +mall[:5] #+traffic[:2]+supermarket[:2]
+    result.sort(key=lambda x:x[1],reverse=True)
     f=open("./results/ensemble/m1/"+i,"w")
     temp=[]
     for j in result:
