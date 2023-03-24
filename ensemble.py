@@ -49,7 +49,7 @@ for i in files:
     #supermarket=readfile(i,"/content/Person_ReID/results/supermarket/")
     query_path=opts.query_path+"/"+i[:3]+"/"+i[:-4]+".jpg"
     #method 1
-    #take top5 of all the datasets
+    #take top N/k from all the datasets
     result=campus[:5]+bus[:5] +mall[:5] #+traffic[:2]+supermarket[:2]
     f=open("./results/ensemble/m1/"+i,"w")
     temp=[]
@@ -82,8 +82,8 @@ for i in files:
     fig.savefig("./results/ensemble/m1/"+i[:-4]+".jpg")
     plt.close('all')
     #method 2
-    #sort all the results and take top 10
-    result=campus+bus #+mall+traffic+supermarket
+    #sort all the results and take top N
+    result=campus+bus+mall #+traffic+supermarket
     result.sort(key=lambda x:x[1],reverse=True)
     temp=[]
     for j in range(N):
