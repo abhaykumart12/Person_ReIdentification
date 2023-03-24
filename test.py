@@ -19,11 +19,7 @@ import yaml
 import math
 from model import ft_net, ft_net_dense, ft_net_hr, ft_net_swin, ft_net_swinv2, ft_net_efficient, ft_net_NAS, ft_net_convnext, PCB, PCB_test
 from utils import fuse_all_conv_bn
-#fp16
-try:
-    from apex.fp16_utils import *
-except ImportError: # will be 3.x series
-    print('This is not an error. If you want to use low precision, i.e., fp16, please install the apex with cuda support (https://github.com/NVIDIA/apex) and update pytorch to 1.0')
+
 ######################################################################
 # Options
 # --------
@@ -107,10 +103,8 @@ if len(gpu_ids)>0:
 # We will use torchvision and torch.utils.data packages for loading the
 # data.
 #
-if opt.use_swin:
-    h, w = 224, 224
-else:
-    h, w = 256, 128
+
+h, w = 256, 128
 
 data_transforms = transforms.Compose([
         transforms.Resize((h, w), interpolation=3),
@@ -128,25 +122,9 @@ data_transforms = transforms.Compose([
           # ))
 ])
 
-if opt.PCB:
-    data_transforms = transforms.Compose([
-        transforms.Resize((384,192), interpolation=3),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]) 
-    ])
-    h, w = 384, 192
-
-
 data_dir = test_dir
-
-if opt.multi:
-    image_datasets = {x: datasets.ImageFolder( os.path.join(data_dir,x) ,data_transforms) for x in ['gallery','query','multi-query']}
-    dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=opt.batchsize,
-                                             shuffle=False, num_workers=16) for x in ['gallery','query','multi-query']}
-else:
-    image_datasets = {x: datasets.ImageFolder( os.path.join(data_dir,x) ,data_transforms) for x in ['gallery','query']}
-    dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=opt.batchsize,
-                                             shuffle=False, num_workers=16) for x in ['gallery','query']}
+image_datasets = {x: datasets.ImageFolder( os.path.join(data_dir,x) ,data_transforms) for x in ['gallery','query']}
+dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=opt.batchsize,shuffle=False, num_workers=16) for x in ['gallery','query']}
 class_names = image_datasets['query'].classes
 use_gpu = torch.cuda.is_available()
 
@@ -175,14 +153,7 @@ def extract_feature(model,dataloaders):
     #features = torch.FloatTensor()
     count = 0
     if opt.linear_num <= 0:
-        if opt.use_swin or opt.use_swinv2 or opt.use_dense or opt.use_convnext:
-            opt.linear_num = 1024
-        elif opt.use_efficient:
-            opt.linear_num = 1792
-        elif opt.use_NAS:
-            opt.linear_num = 4032
-        else:
-            opt.linear_num = 2048
+        opt.linear_num = 2048
 
     for iter, data in enumerate(dataloaders):
         img, label = data
@@ -205,16 +176,9 @@ def extract_feature(model,dataloaders):
                 outputs = model(input_img) 
                 ff += outputs
         # norm feature
-        if opt.PCB:
-            # feature size (n,2048,6)
-            # 1. To treat every part equally, I calculate the norm for every 2048-dim part feature.
-            # 2. To keep the cosine score==1, sqrt(6) is added to norm the whole feature (2048*6).
-            fnorm = torch.norm(ff, p=2, dim=1, keepdim=True) * np.sqrt(6) 
-            ff = ff.div(fnorm.expand_as(ff))
-            ff = ff.view(ff.size(0), -1)
-        else:
-            fnorm = torch.norm(ff, p=2, dim=1, keepdim=True)
-            ff = ff.div(fnorm.expand_as(ff))
+        
+        fnorm = torch.norm(ff, p=2, dim=1, keepdim=True)
+        ff = ff.div(fnorm.expand_as(ff))
 
         
         if iter == 0:
@@ -233,10 +197,7 @@ def get_id(img_path):
         filename = os.path.basename(path)
         label = filename[0:3]
         camera = filename.split('c')[1]
-        if label[0:2]=='-1':
-            labels.append(-1)
-        else:
-            labels.append(int(label))
+        labels.append(int(label))
         camera_id.append(int(camera[0]))
     return camera_id, labels
 
@@ -246,50 +207,14 @@ query_path = image_datasets['query'].imgs
 gallery_cam,gallery_label = get_id(gallery_path)
 query_cam,query_label = get_id(query_path)
 
-if opt.multi:
-    mquery_path = image_datasets['multi-query'].imgs
-    mquery_cam,mquery_label = get_id(mquery_path)
-
 ######################################################################
 # Load Collected data Trained model
 print('-------test-----------')
-if opt.use_dense:
-    model_structure = ft_net_dense(opt.nclasses, stride = opt.stride, linear_num=opt.linear_num)
-elif opt.use_NAS:
-    model_structure = ft_net_NAS(opt.nclasses, linear_num=opt.linear_num)
-elif opt.use_swin:
-    model_structure = ft_net_swin(opt.nclasses, linear_num=opt.linear_num)
-elif opt.use_swinv2:
-    model_structure = ft_net_swinv2(opt.nclasses, (h,w),  linear_num=opt.linear_num)
-elif opt.use_convnext:
-    model_structure = ft_net_convnext(opt.nclasses, linear_num=opt.linear_num)
-elif opt.use_efficient:
-    model_structure = ft_net_efficient(opt.nclasses, linear_num=opt.linear_num)
-elif opt.use_hr:
-    model_structure = ft_net_hr(opt.nclasses, linear_num=opt.linear_num)
-else:
-    model_structure = ft_net(opt.nclasses, stride = opt.stride, ibn = opt.ibn, linear_num=opt.linear_num)
-
-if opt.PCB:
-    model_structure = PCB(opt.nclasses)
-
-#if opt.fp16:
-#    model_structure = network_to_half(model_structure)
-
+model_structure = ft_net(opt.nclasses, stride = opt.stride, ibn = opt.ibn, linear_num=opt.linear_num)
 model = load_network(model_structure)
 
 # Remove the final fc layer and classifier layer
-if opt.PCB:
-    #if opt.fp16:
-    #    model = PCB_test(model[1])
-    #else:
-        model = PCB_test(model)
-else:
-    #if opt.fp16:
-        #model[1].model.fc = nn.Sequential()
-        #model[1].classifier = nn.Sequential()
-    #else:
-        model.classifier.classifier = nn.Sequential()
+model.classifier.classifier = nn.Sequential()
 
 # Change to test mode
 model = model.eval()
@@ -313,8 +238,6 @@ since = time.time()
 with torch.no_grad():
     gallery_feature = extract_feature(model,dataloaders['gallery'])
     query_feature = extract_feature(model,dataloaders['query'])
-    if opt.multi:
-        mquery_feature = extract_feature(model,dataloaders['multi-query'])
 time_elapsed = time.time() - since
 #print('Training complete in {:.0f}m {:.2f}s'.format(time_elapsed // 60, time_elapsed % 60))
 # Save to Matlab for check
@@ -325,7 +248,3 @@ scipy.io.savemat(save_file,result)
 print(opt.name)
 result = './model/%s/result.txt'%opt.name
 os.system('python evaluate_gpu.py --name %s --data_dir %s --save_dir %s | tee -a %s'%(opt.name,opt.test_dir,opt.save_dir,result))
-
-if opt.multi:
-    result = {'mquery_f':mquery_feature.numpy(),'mquery_label':mquery_label,'mquery_cam':mquery_cam}
-    scipy.io.savemat('multi_query.mat',result)
