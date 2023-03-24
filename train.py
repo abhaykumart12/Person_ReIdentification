@@ -16,21 +16,14 @@ import matplotlib.pyplot as plt
 import time
 import os
 from model import ft_net, ft_net_dense, ft_net_hr, ft_net_swin, ft_net_swinv2, ft_net_convnext, ft_net_efficient, ft_net_NAS, PCB
-from random_erasing import RandomErasing
-from dgfolder import DGFolder
+#from random_erasing import RandomErasing
+#from dgfolder import DGFolder
 import yaml
 from shutil import copyfile
-from circle_loss import CircleLoss, convert_label_to_similarity
-from instance_loss import InstanceLoss
-from ODFA import ODFA
+#from circle_loss import CircleLoss, convert_label_to_similarity
+#from instance_loss import InstanceLoss
+#from ODFA import ODFA
 version =  torch.__version__
-#fp16
-try:
-    from apex.fp16_utils import *
-    from apex import amp
-    from apex.optimizers import FusedSGD
-except ImportError: # will be 3.x series
-    print('This is not an error. If you want to use low precision, i.e., fp16, please install the apex with cuda support (https://github.com/NVIDIA/apex) and update pytorch to 1.0')
 
 from pytorch_metric_learning import losses, miners #pip install pytorch-metric-learning
 
@@ -102,10 +95,7 @@ if len(gpu_ids)>0:
 # ---------
 #
 
-if opt.use_swin:
-    h, w = 224, 224
-else:
-    h, w = 256, 128
+h, w = 256, 128
 
 transform_train_list = [
         #transforms.RandomResizedCrop(size=128, scale=(0.75,1.0), ratio=(0.75,1.3333), interpolation=3), #Image.BICUBIC)
@@ -123,25 +113,6 @@ transform_val_list = [
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ]
 
-if opt.PCB:
-    transform_train_list = [
-        transforms.Resize((384,192), interpolation=3),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ]
-    transform_val_list = [
-        transforms.Resize(size=(384,192),interpolation=3), #Image.BICUBIC
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ]
-
-if opt.erasing_p>0:
-    transform_train_list = transform_train_list +  [RandomErasing(probability = opt.erasing_p, mean=[0.0, 0.0, 0.0])]
-
-if opt.color_jitter:
-    transform_train_list = [transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0)] + transform_train_list
-
 print(transform_train_list)
 data_transforms = {
     'train': transforms.Compose( transform_train_list ),
@@ -149,12 +120,8 @@ data_transforms = {
 }
 
 
-train_all = ''
-if opt.train_all:
-     train_all = '_all'
-
 image_datasets = {}
-image_datasets['train'] = datasets.ImageFolder(os.path.join(data_dir, 'train' + train_all),
+image_datasets['train'] = datasets.ImageFolder(os.path.join(data_dir, 'train'),
                                           data_transforms['train'])
 image_datasets['val'] = datasets.ImageFolder(os.path.join(data_dir, 'val'),
                                           data_transforms['val'])
@@ -163,14 +130,6 @@ dataloaders = {x: torch.utils.data.DataLoader(image_datasets[x], batch_size=opt.
                                              shuffle=True, num_workers=2, pin_memory=True,
                                              prefetch_factor=2, persistent_workers=True) # 8 workers may work faster
               for x in ['train', 'val']}
-
-# Use extra DG-Market Dataset for training. Please download it from https://github.com/NVlabs/DG-Net#dg-market.
-if opt.DG:
-    image_datasets['DG'] = DGFolder(os.path.join('../DG-Market' ),
-                                          data_transforms['train'])
-    dataloaders['DG'] = torch.utils.data.DataLoader(image_datasets['DG'], batch_size = max(8, opt.batchsize//2),
-                                             shuffle=True, num_workers=2, pin_memory=True)
-    DGloader_iter = enumerate(dataloaders['DG'])
 
 dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
 class_names = image_datasets['train'].classes
@@ -213,23 +172,6 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
     #best_acc = 0.0
     warm_up = 0.1 # We start from the 0.1*lrRate
     warm_iteration = round(dataset_sizes['train']/opt.batchsize)*opt.warm_epoch # first 5 epoch
-    if opt.arcface:
-        criterion_arcface = losses.ArcFaceLoss(num_classes=opt.nclasses, embedding_size=512)
-    if opt.cosface: 
-        criterion_cosface = losses.CosFaceLoss(num_classes=opt.nclasses, embedding_size=512)
-    if opt.circle:
-        criterion_circle = CircleLoss(m=0.25, gamma=32) # gamma = 64 may lead to a better result.
-    if opt.triplet:
-        miner = miners.MultiSimilarityMiner()
-        criterion_triplet = losses.TripletMarginLoss(margin=0.3)
-    if opt.lifted:
-        criterion_lifted = losses.GeneralizedLiftedStructureLoss(neg_margin=1, pos_margin=0)
-    if opt.contrast: 
-        criterion_contrast = losses.ContrastiveLoss(pos_margin=0, neg_margin=1)
-    if opt.instance:
-        criterion_instance = InstanceLoss(gamma = opt.ins_gamma)
-    if opt.sphere:
-        criterion_sphere = losses.SphereFaceLoss(num_classes=opt.nclasses, embedding_size=512, margin=4)
     for epoch in range(num_epochs):
         print('Epoch {}/{}'.format(epoch, num_epochs - 1))
         print('-' * 10)
@@ -271,96 +213,14 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
                 else:
                     outputs = model(inputs)
 
-
-
-                if opt.adv>0 and iter%opt.aiter==0: 
-                    inputs_adv = ODFA(model, inputs)
-                    outputs_adv = model(inputs_adv)
-
                 sm = nn.Softmax(dim=1)
                 log_sm = nn.LogSoftmax(dim=1)
-                return_feature = opt.arcface or opt.cosface or opt.circle or opt.triplet or opt.contrast or opt.instance or opt.lifted or opt.sphere
-                if return_feature: 
-                    logits, ff = outputs
-                    fnorm = torch.norm(ff, p=2, dim=1, keepdim=True)
-                    ff = ff.div(fnorm.expand_as(ff))
-                    loss = criterion(logits, labels) 
-                    _, preds = torch.max(logits.data, 1)
-                    if opt.adv>0  and iter%opt.aiter==0:
-                        logits_adv, _ = outputs_adv
-                        loss += opt.adv * criterion(logits_adv, labels)
-                    if opt.arcface:
-                        loss +=  criterion_arcface(ff, labels)/now_batch_size
-                    if opt.cosface:
-                        loss +=  criterion_cosface(ff, labels)/now_batch_size
-                    if opt.circle:
-                        loss +=  criterion_circle(*convert_label_to_similarity( ff, labels))/now_batch_size
-                    if opt.triplet:
-                        hard_pairs = miner(ff, labels)
-                        loss +=  criterion_triplet(ff, labels, hard_pairs) #/now_batch_size
-                    if opt.lifted:
-                        loss +=  criterion_lifted(ff, labels) #/now_batch_size
-                    if opt.contrast:
-                        loss +=  criterion_contrast(ff, labels) #/now_batch_size
-                    if opt.instance:
-                        loss += criterion_instance(ff) /now_batch_size
-                    if opt.sphere:
-                        loss +=  criterion_sphere(ff, labels)/now_batch_size
-                elif opt.PCB:  #  PCB
-                    part = {}
-                    num_part = 6
-                    for i in range(num_part):
-                        part[i] = outputs[i]
-
-                    score = sm(part[0]) + sm(part[1]) +sm(part[2]) + sm(part[3]) +sm(part[4]) +sm(part[5])
-                    _, preds = torch.max(score.data, 1)
-
-                    loss = criterion(part[0], labels)
-                    for i in range(num_part-1):
-                        loss += criterion(part[i+1], labels)
-                else:  #  norm
-                    _, preds = torch.max(outputs.data, 1)
-                    loss = criterion(outputs, labels)
-                    if opt.adv>0 and iter%opt.aiter==0:
-                        loss += opt.adv * criterion(outputs_adv, labels)
+                
+                _, preds = torch.max(outputs.data, 1)
+                loss = criterion(outputs, labels)
 
                 del inputs
-                # use extra DG Dataset (https://github.com/NVlabs/DG-Net#dg-market)
-                if opt.DG and phase == 'train' and epoch > num_epochs*0.1:
-                    try:
-                        _, batch = DGloader_iter.__next__()
-                    except StopIteration: 
-                        DGloader_iter = enumerate(dataloaders['DG'])
-                        _, batch = DGloader_iter.__next__()
-                    except UnboundLocalError:  # first iteration
-                        DGloader_iter = enumerate(dataloaders['DG'])
-                        _, batch = DGloader_iter.__next__()
-                        
-                    inputs1, inputs2, _ = batch
-                    inputs1 = inputs1.cuda().detach()
-                    inputs2 = inputs2.cuda().detach()
-                    # use memory in vivo loss (https://arxiv.org/abs/1912.11164)
-                    outputs1 = model(inputs1)
-                    if return_feature:
-                        outputs1, _ = outputs1
-                    elif opt.PCB:
-                        for i in range(num_part):
-                            part[i] = outputs1[i]
-                        outputs1 = part[0] + part[1] + part[2] + part[3] + part[4] + part[5]
-                    outputs2 = model(inputs2)
-                    if return_feature:
-                        outputs2, _ = outputs2
-                    elif opt.PCB:
-                        for i in range(num_part):
-                            part[i] = outputs2[i]
-                        outputs2 = part[0] + part[1] + part[2] + part[3] + part[4] + part[5]
-
-                    mean_pred = sm(outputs1 + outputs2)
-                    kl_loss = nn.KLDivLoss(size_average=False)
-                    reg= (kl_loss(log_sm(outputs2) , mean_pred)  + kl_loss(log_sm(outputs1) , mean_pred))/2
-                    loss += 0.01*reg
-                    del inputs1, inputs2
-                    #print(0.01*reg)
+                
                 # backward + optimize only if in training phase
                 if epoch<opt.warm_epoch and phase == 'train': 
                     warm_up = min(1.0, warm_up + 0.9 / warm_iteration)
@@ -448,28 +308,8 @@ def save_network(network, epoch_label):
 #
 # Load a pretrainied model and reset final fully connected layer.
 #
-
 return_feature = opt.arcface or opt.cosface or opt.circle or opt.triplet or opt.contrast or opt.instance or opt.lifted or opt.sphere
-
-if opt.use_dense:
-    model = ft_net_dense(len(class_names), opt.droprate, opt.stride, circle = return_feature, linear_num=opt.linear_num)
-elif opt.use_NAS:
-    model = ft_net_NAS(len(class_names), opt.droprate, linear_num=opt.linear_num)
-elif opt.use_swin:
-    model = ft_net_swin(len(class_names), opt.droprate, opt.stride, circle = return_feature, linear_num=opt.linear_num)
-elif opt.use_swinv2:
-    model = ft_net_swinv2(len(class_names), (h, w), opt.droprate, opt.stride, circle = return_feature, linear_num=opt.linear_num)
-elif opt.use_efficient:
-    model = ft_net_efficient(len(class_names), opt.droprate, circle = return_feature, linear_num=opt.linear_num)
-elif opt.use_hr:
-    model = ft_net_hr(len(class_names), opt.droprate, circle = return_feature, linear_num=opt.linear_num)
-elif opt.use_convnext:
-    model = ft_net_convnext(len(class_names), opt.droprate, circle = return_feature, linear_num=opt.linear_num)
-else:
-    model = ft_net(len(class_names), opt.droprate, opt.stride, circle = return_feature, ibn=opt.ibn, linear_num=opt.linear_num)
-
-if opt.PCB:
-    model = PCB(len(class_names))
+model = ft_net(len(class_names), opt.droprate, opt.stride, circle = return_feature, ibn=opt.ibn, linear_num=opt.linear_num)
 
 opt.nclasses = len(class_names)
 
@@ -478,9 +318,6 @@ print(model)
 # model to gpu
 model = model.cuda()
 
-optim_name = optim.SGD #apex.optimizers.FusedSGD
-if opt.FSGD: # apex is needed
-    optim_name = FusedSGD
 
 if not opt.PCB:
     ignored_params = list(map(id, model.classifier.parameters() ))
@@ -510,8 +347,6 @@ else:
 
 # Decay LR by a factor of 0.1 every 40 epochs
 exp_lr_scheduler = optim.lr_scheduler.StepLR(optimizer_ft, step_size=opt.total_epoch*2//3, gamma=0.1)
-if opt.cosine:
-    exp_lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer_ft, opt.total_epoch, eta_min=0.01*opt.lr)
 
 ######################################################################
 # Train and evaluate
@@ -531,12 +366,6 @@ with open('%s/opts.yaml'%dir_name,'w') as fp:
     yaml.dump(vars(opt), fp, default_flow_style=False)
 
 criterion = nn.CrossEntropyLoss()
-
-if fp16:
-    #model = network_to_half(model)
-    #optimizer_ft = FP16_Optimizer(optimizer_ft, static_loss_scale = 128.0)
-    model, optimizer_ft = amp.initialize(model, optimizer_ft, opt_level = "O1")
-
 model = train_model(model, criterion, optimizer_ft, exp_lr_scheduler,
                        num_epochs=opt.total_epoch)
 
