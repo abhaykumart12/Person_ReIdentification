@@ -113,3 +113,5 @@ for i in files:
         c+=1
     fig.savefig("./results/ensemble/m2/"+i[:-4]+".jpg")
     plt.close('all')
+
+os.system("python evaluate_ensemble.py")
