@@ -75,9 +75,9 @@ for i in files:
         label=int(fname.split("_")[0])
         imshow(j)
         if label == query_label:
-            ax.set_title('%d'%(c), color='green')
+            ax.set_title('T', color='green')
         else:
-            ax.set_title('%d'%(c), color='red')
+            ax.set_title('F', color='red')
         c+=1
 
     fig.savefig("./results/ensemble/m1/"+i[:-4]+".jpg")
