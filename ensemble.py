@@ -60,7 +60,7 @@ for i in files:
         pid=int(xx[0])
         cid=int(xx[1][1])
         frame=int(xx[2][1:])
-        ff=str(pid)+'\t'+str(cid)+'\t'+str(frame)
+        ff=str(pid)+' '+str(cid)+' '+str(frame)
         temp.append(ff)
     s="\n".join(temp)
     f.write(s)
@@ -77,8 +77,8 @@ for i in files:
     for j in temp:
         ax = plt.subplot(1,16,c+1)
         ax.axis('off')
-        fname=j.split("/")[-1]
-        label=int(fname.split("_")[0])
+        fname=j.split(" ")
+        label=int(fname[0])
         imshow(j)
         if label == query_label:
             ax.set_title('T', color='green')
@@ -99,7 +99,7 @@ for i in files:
         pid=int(xx[0])
         cid=int(xx[1][1])
         frame=int(xx[2][1:])
-        ff=str(pid)+'\t'+str(cid)+'\t'+str(frame)
+        ff=str(pid)+' '+str(cid)+' '+str(frame)
         temp.append(ff)
         #temp.append(result[j][0])
     s="\n".join(temp)
@@ -116,8 +116,8 @@ for i in files:
     for j in temp:
         ax = plt.subplot(1,16,c+1)
         ax.axis('off')
-        fname=j.split("/")[-1]
-        label=int(fname.split("_")[0])
+        fname=j.split(" ")
+        label=int(fname[0])
         imshow(j)
         if label == query_label:
             ax.set_title('T', color='green')
