@@ -55,7 +55,13 @@ for i in files:
     f=open("./results/ensemble/m1/"+i,"w")
     temp=[]
     for j in result:
-        temp.append(j[0])
+        x=j[0].split("/")[-1]
+        xx=x.split("_")
+        pid=int(xx[0])
+        cid=int(xx[1][1])
+        frame=int(xx[2][1:])
+        f=str(pid)+'\t'+str(cid)+'\t'+str(frame)
+        temp.append(f)
     s="\n".join(temp)
     f.write(s)
     f.close()
@@ -88,7 +94,14 @@ for i in files:
     result.sort(key=lambda x:x[1],reverse=True)
     temp=[]
     for j in range(N):
-        temp.append(result[j][0])
+        x=result[j][0].split("/")[-1]
+        xx=x.split("_")
+        pid=int(xx[0])
+        cid=int(xx[1][1])
+        frame=int(xx[2][1:])
+        f=str(pid)+'\t'+str(cid)+'\t'+str(frame)
+        temp.append(f)
+        #temp.append(result[j][0])
     s="\n".join(temp)
     f=open("./results/ensemble/m2/"+i,"w")
     f.write(s)
